@@ -1,35 +1,35 @@
 # Workstation
 
-Personal macOS setup and **Cursor agent skills** for iMessage / Contacts automation.
+Personal macOS setup and a **single Cursor agent skill** for iMessage / Contacts (`imessage`).
 
-## Cursor skills (iMessage)
+## Cursor skill
 
-Skills live in `.cursor/skills/`. Cursor loads **project** skills from this directory when this repo is the workspace, and **personal** skills from `~/.cursor/skills/`.
-
-To use the same skills in every project via your home directory:
+Skills live under `.cursor/skills/`. With this repo as the workspace, Cursor loads **imessage** automatically. To use it from any project, symlink into your personal skills folder:
 
 ```bash
 cd /path/to/workstation   # this repository
 mkdir -p ~/.cursor/skills
-for d in imessage read-imessage send-imessage; do
-  ln -sf "$PWD/.cursor/skills/$d" "$HOME/.cursor/skills/$d"
-done
+ln -sf "$PWD/.cursor/skills/imessage" "$HOME/.cursor/skills/imessage"
 ```
 
-From the **repository root**, you can also run scripts directly:
+Remove stale symlinks if you had the old split skills:
+
+```bash
+rm -f ~/.cursor/skills/read-imessage ~/.cursor/skills/send-imessage
+```
+
+From the **repository root**:
 
 ```bash
 python3 .cursor/skills/imessage/scripts/get_contacts.py "Name"
 ```
 
-See each skill’s `SKILL.md` for permissions (Automation, Full Disk Access) and usage.
+See [.cursor/skills/imessage/SKILL.md](.cursor/skills/imessage/SKILL.md) for all scripts, permissions, and usage.
 
 ## Contents
 
-| Skill | Role |
-|-------|------|
-| [imessage](.cursor/skills/imessage/SKILL.md) | Lookup Contacts, link to read/send |
-| [send-imessage](.cursor/skills/send-imessage/SKILL.md) | Send messages via Messages.app |
-| [read-imessage](.cursor/skills/read-imessage/SKILL.md) | Read `chat.db` from disk |
+| Path | Role |
+|------|------|
+| [.cursor/skills/imessage/](.cursor/skills/imessage/) | **SKILL.md**, `reference.md`, `scripts/*.py` |
 
 No secrets or account data belong in this repository—only scripts and documentation.
