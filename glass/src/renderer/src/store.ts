@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import type {
   AccountInfo,
+  Automation,
   GlassEvent,
   ModelInfo,
   Session,
@@ -10,7 +11,7 @@ import type {
   VerifyResult,
 } from "@shared/types";
 import { glass } from "./api";
-import { demoModels, demoSessions, demoTranscripts } from "./demo";
+import { demoAutomations, demoModels, demoSessions, demoTranscripts } from "./demo";
 
 interface GlassState {
   ready: boolean;
@@ -19,21 +20,31 @@ interface GlassState {
   account: AccountInfo | null;
   models: ModelInfo[];
   sessions: Session[];
+  automations: Automation[];
   activeSessionId: string | null;
   transcripts: Record<string, TranscriptItem[]>;
+  sidebarCollapsed: boolean;
   showNewAgent: boolean;
   showSettings: boolean;
+  showAutomations: boolean;
   toast: string | null;
 
   init: () => Promise<void>;
   selectSession: (id: string) => void;
   createSession: (config: SessionConfig) => Promise<void>;
   removeSession: (id: string) => Promise<void>;
+  renameSession: (id: string, name: string) => Promise<void>;
   send: (text: string) => Promise<void>;
   cancelActiveRun: () => Promise<void>;
   saveApiKey: (apiKey: string) => Promise<VerifyResult>;
+  saveSettings: (patch: Partial<Settings>) => Promise<void>;
+  saveAutomation: (automation: Automation) => Promise<void>;
+  removeAutomation: (id: string) => Promise<void>;
+  runAutomationNow: (id: string) => Promise<void>;
+  setSidebarCollapsed: (collapsed: boolean) => void;
   setShowNewAgent: (show: boolean) => void;
   setShowSettings: (show: boolean) => void;
+  setShowAutomations: (show: boolean) => void;
   showToast: (message: string) => void;
 }
 
@@ -67,6 +78,8 @@ export const useGlass = create<GlassState>((set, get) => {
         activeSessionId:
           state.activeSessionId === event.sessionId ? null : state.activeSessionId,
       }));
+    } else if (event.type === "automations") {
+      set({ automations: event.automations });
     }
   }
 
@@ -93,10 +106,13 @@ export const useGlass = create<GlassState>((set, get) => {
     account: null,
     models: [],
     sessions: [],
+    automations: [],
     activeSessionId: null,
     transcripts: {},
+    sidebarCollapsed: false,
     showNewAgent: false,
     showSettings: false,
+    showAutomations: false,
     toast: null,
 
     init: async () => {
@@ -108,14 +124,21 @@ export const useGlass = create<GlassState>((set, get) => {
           models: demoModels,
           sessions: demoSessions,
           transcripts: demoTranscripts,
+          automations: demoAutomations,
           activeSessionId: demoSessions[0]?.id ?? null,
+          showSettings: glass.smokeView === "settings",
+          showAutomations: glass.smokeView === "automations",
         });
         return;
       }
 
       glass.onEvent(applyEvent);
-      const [settings, sessions] = await Promise.all([glass.getSettings(), glass.listSessions()]);
-      set({ settings, sessions, ready: true, activeSessionId: sessions[0]?.id ?? null });
+      const [settings, sessions, automations] = await Promise.all([
+        glass.getSettings(),
+        glass.listSessions(),
+        glass.listAutomations(),
+      ]);
+      set({ settings, sessions, automations, ready: true, activeSessionId: sessions[0]?.id ?? null });
       if (sessions[0]) void loadTranscript(sessions[0].id);
 
       if (settings.apiKey) {
@@ -155,6 +178,16 @@ export const useGlass = create<GlassState>((set, get) => {
       }));
     },
 
+    renameSession: async (id, name) => {
+      if (!name.trim()) return;
+      set((state) => ({
+        sessions: state.sessions.map((session) =>
+          session.id === id ? { ...session, name: name.trim() } : session,
+        ),
+      }));
+      if (!get().demo) await glass.renameSession(id, name);
+    },
+
     send: async (text) => {
       const { activeSessionId, demo, showToast } = get();
       if (!activeSessionId) return;
@@ -188,8 +221,57 @@ export const useGlass = create<GlassState>((set, get) => {
       return result;
     },
 
+    saveSettings: async (patch) => {
+      if (get().demo) {
+        set((state) => ({ settings: { ...state.settings, ...patch } }));
+        return;
+      }
+      const settings = await glass.setSettings(patch);
+      set({ settings });
+    },
+
+    saveAutomation: async (automation) => {
+      if (get().demo) {
+        set((state) => {
+          const exists = state.automations.some((item) => item.id === automation.id);
+          return {
+            automations: exists
+              ? state.automations.map((item) => (item.id === automation.id ? automation : item))
+              : [...state.automations, automation],
+          };
+        });
+        return;
+      }
+      const automations = await glass.saveAutomation(automation);
+      set({ automations });
+    },
+
+    removeAutomation: async (id) => {
+      if (get().demo) {
+        set((state) => ({ automations: state.automations.filter((item) => item.id !== id) }));
+        return;
+      }
+      const automations = await glass.removeAutomation(id);
+      set({ automations });
+    },
+
+    runAutomationNow: async (id) => {
+      if (get().demo) {
+        get().showToast("Demo mode: connect an API key to run automations");
+        return;
+      }
+      try {
+        await glass.runAutomationNow(id);
+        get().showToast("Automation dispatched");
+      } catch (error) {
+        get().showToast(error instanceof Error ? error.message : String(error));
+      }
+    },
+
+    setSidebarCollapsed: (collapsed) => set({ sidebarCollapsed: collapsed }),
     setShowNewAgent: (show) => set({ showNewAgent: show }),
     setShowSettings: (show) => set({ showSettings: show }),
+    setShowAutomations: (show) => set({ showAutomations: show }),
 
     showToast: (message) => {
       if (toastTimer) clearTimeout(toastTimer);

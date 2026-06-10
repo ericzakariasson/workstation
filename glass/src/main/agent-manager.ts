@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
+import { mkdirSync } from "node:fs";
 import { join } from "node:path";
-import type { Run, SDKAgent, SDKMessage } from "@cursor/sdk";
+import type { McpServerConfig, Run, SDKAgent, SDKCustomTool, SDKMessage } from "@cursor/sdk";
 import type {
   GlassEvent,
   ModelInfo,
@@ -9,11 +10,17 @@ import type {
   TranscriptItem,
   VerifyResult,
 } from "@shared/types";
+import { LspManager } from "./lsp";
 import type { GlassStore } from "./store";
 
 type CursorSdk = typeof import("@cursor/sdk");
 
 const PAYLOAD_LIMIT = 20_000;
+const NAME_PROMPT_LIMIT = 600;
+
+export interface SendOptions {
+  automationName?: string;
+}
 
 /**
  * Owns every live Cursor SDK agent handle and run. The renderer only ever
@@ -22,6 +29,7 @@ const PAYLOAD_LIMIT = 20_000;
 export class AgentManager {
   private sdkPromise?: Promise<CursorSdk>;
   private live = new Map<string, { agent?: SDKAgent; run?: Run }>();
+  readonly lsp = new LspManager();
 
   constructor(
     private readonly store: GlassStore,
@@ -50,6 +58,81 @@ export class AgentManager {
     const apiKey = this.store.getSettings().apiKey;
     if (!apiKey) throw new Error("No Cursor API key configured. Add one in Settings.");
     return apiKey;
+  }
+
+  // -- agent configuration ------------------------------------------------------
+
+  /** Enabled MCP servers from settings, in the SDK's inline config shape. */
+  private buildMcpServers(): Record<string, McpServerConfig> | undefined {
+    const entries = this.store.getSettings().mcpServers?.filter((entry) => entry.enabled) ?? [];
+    if (entries.length === 0) return undefined;
+    const servers: Record<string, McpServerConfig> = {};
+    for (const entry of entries) {
+      if (entry.transport === "stdio") {
+        if (!entry.command) continue;
+        servers[entry.name] = {
+          type: "stdio",
+          command: entry.command,
+          args: entry.args,
+          env: entry.env,
+        };
+      } else {
+        if (!entry.url) continue;
+        servers[entry.name] = { type: "http", url: entry.url, headers: entry.headers };
+      }
+    }
+    return Object.keys(servers).length > 0 ? servers : undefined;
+  }
+
+  /**
+   * Custom tools for local agents. When LSP servers are configured, the agent
+   * gets `lsp_diagnostics` to verify its edits with a real language server.
+   */
+  private buildCustomTools(session: Session): Record<string, SDKCustomTool> | undefined {
+    const lspServers = this.store.getSettings().lspServers ?? [];
+    if (lspServers.length === 0 || !session.cwd) return undefined;
+    const cwd = session.cwd;
+    return {
+      lsp_diagnostics: {
+        description:
+          "Get language-server diagnostics (errors, warnings) for a file in the workspace. " +
+          "Use this after editing files to verify they compile and pass language checks.",
+        inputSchema: {
+          type: "object",
+          properties: {
+            path: {
+              type: "string",
+              description: "File path, absolute or relative to the workspace root",
+            },
+          },
+          required: ["path"],
+        },
+        execute: async (args) => {
+          const path = String(args.path ?? "");
+          if (!path) return { content: [{ type: "text", text: "Missing path" }], isError: true };
+          try {
+            return await this.lsp.diagnostics(cwd, path, this.store.getSettings().lspServers ?? []);
+          } catch (error) {
+            return {
+              content: [{ type: "text", text: describeError(error) }],
+              isError: true,
+            };
+          }
+        },
+      },
+    };
+  }
+
+  /**
+   * settingSources makes local agents load `.cursor/` config from the project
+   * and home dir: skills, file-based MCP servers, hooks, and subagents.
+   */
+  private buildLocalOptions(session: Session) {
+    return {
+      cwd: session.cwd!,
+      settingSources: ["project", "user"] as ("project" | "user")[],
+      customTools: this.buildCustomTools(session),
+    };
   }
 
   // -- account / catalog -------------------------------------------------------
@@ -90,7 +173,8 @@ export class AgentManager {
     const now = Date.now();
     const session: Session = {
       id: randomUUID(),
-      name: config.name.trim() || "Untitled agent",
+      name: config.name.trim() || "New agent",
+      nameIsAuto: config.name.trim().length === 0,
       runtime: config.runtime,
       model: config.model,
       mode: config.mode,
@@ -106,6 +190,7 @@ export class AgentManager {
     this.broadcast({ type: "session", session });
 
     try {
+      const mcpServers = this.buildMcpServers();
       const agent =
         config.runtime === "local"
           ? await sdk.Agent.create({
@@ -113,13 +198,15 @@ export class AgentManager {
               name: session.name,
               model: session.model,
               mode: session.mode,
-              local: { cwd: config.cwd! },
+              mcpServers,
+              local: this.buildLocalOptions(session),
             })
           : await sdk.Agent.create({
               apiKey,
               name: session.name,
               model: session.model,
               mode: session.mode,
+              mcpServers,
               cloud: {
                 repos: session.repoUrl
                   ? [{ url: session.repoUrl, startingRef: session.startingRef }]
@@ -141,6 +228,7 @@ export class AgentManager {
   }
 
   async removeSession(sessionId: string): Promise<void> {
+    const session = this.store.getSession(sessionId);
     const entry = this.live.get(sessionId);
     try {
       entry?.run?.cancel().catch(() => {});
@@ -148,10 +236,17 @@ export class AgentManager {
     } finally {
       this.live.delete(sessionId);
     }
+    if (session?.cwd) this.lsp.disposeWorkspace(session.cwd);
     // Only Glass's local records are removed; the underlying Cursor agent
     // (and any cloud transcript) stays available from cursor.com/agents.
     this.store.removeSession(sessionId);
     this.broadcast({ type: "session-removed", sessionId });
+  }
+
+  renameSession(sessionId: string, name: string): void {
+    const session = this.store.getSession(sessionId);
+    if (!session || !name.trim()) return;
+    this.updateSession(session, { name: name.trim().slice(0, 80), nameIsAuto: false });
   }
 
   async cancelRun(sessionId: string): Promise<void> {
@@ -168,15 +263,26 @@ export class AgentManager {
       }
     }
     this.live.clear();
+    this.lsp.disposeAll();
   }
 
   // -- messaging ----------------------------------------------------------------
 
-  async send(sessionId: string, text: string): Promise<void> {
+  async send(sessionId: string, text: string, options?: SendOptions): Promise<void> {
     const session = this.store.getSession(sessionId);
     if (!session) throw new Error("Unknown session");
 
     const agent = await this.ensureAgent(session);
+    const isFirstMessage = this.store.getTranscript(session.id).length === 0;
+
+    if (options?.automationName) {
+      this.pushItem(session, {
+        id: randomUUID(),
+        kind: "status",
+        text: `Automation "${options.automationName}" triggered`,
+        ts: Date.now(),
+      });
+    }
     this.pushItem(session, { id: randomUUID(), kind: "user", text, ts: Date.now() });
     this.updateSession(session, { status: "running", lastError: undefined });
 
@@ -193,6 +299,10 @@ export class AgentManager {
     const entry = this.live.get(session.id) ?? {};
     entry.run = run;
     this.live.set(session.id, entry);
+    this.updateSession(session, { activeRunId: run.id });
+
+    if (isFirstMessage && session.nameIsAuto) this.generateName(session, text);
+
     void this.consumeRun(session.id, run);
   }
 
@@ -202,13 +312,108 @@ export class AgentManager {
     if (!session.agentId) throw new Error("Session has no agent id");
 
     const sdk = await this.loadSdk();
+    // Inline MCP servers and custom tools are not persisted by the SDK across
+    // resume, so pass the current settings again.
     const agent = await sdk.Agent.resume(session.agentId, {
       apiKey: this.requireApiKey(),
       model: session.model,
+      mcpServers: this.buildMcpServers(),
+      ...(session.runtime === "local" ? { local: this.buildLocalOptions(session) } : {}),
     });
     this.live.set(session.id, { ...(entry ?? {}), agent });
     return agent;
   }
+
+  // -- resume after sleep / restart ------------------------------------------------
+
+  /**
+   * Reattach to cloud runs that kept going while the laptop lid was closed or
+   * the app was quit. Local runs live in this process and can't be revived.
+   */
+  reattachRunningSessions(reason: "startup" | "wake"): void {
+    for (const session of this.store.listSessions()) {
+      if (session.runtime !== "cloud" || !session.agentId) continue;
+      if (session.status !== "running" || !session.activeRunId) continue;
+      const entry = this.live.get(session.id);
+      if (reason === "startup" && entry?.run) continue; // already attached
+      void this.reattach(session, reason);
+    }
+  }
+
+  private async reattach(session: Session, reason: "startup" | "wake"): Promise<void> {
+    try {
+      const sdk = await this.loadSdk();
+      await this.ensureAgent(session);
+      const run = await sdk.Agent.getRun(session.activeRunId!, {
+        runtime: "cloud",
+        agentId: session.agentId!,
+        apiKey: this.requireApiKey(),
+      });
+
+      if (run.status === "running" && run.supports("stream")) {
+        // After a wake, the pre-sleep stream is often still attached and will
+        // simply resume; only open a new one when no live handle exists.
+        if (reason === "wake" && this.live.get(session.id)?.run) return;
+        const entry = this.live.get(session.id) ?? {};
+        entry.run = run;
+        this.live.set(session.id, entry);
+        this.pushItem(session, {
+          id: randomUUID(),
+          kind: "status",
+          text: reason === "wake" ? "Reconnected after sleep" : "Reconnected to running agent",
+          ts: Date.now(),
+        });
+        void this.consumeRun(session.id, run);
+      } else if (this.store.getSession(session.id)?.status === "running") {
+        // The run ended while we were away; pull the final result.
+        const entry = this.live.get(session.id) ?? {};
+        entry.run = run;
+        this.live.set(session.id, entry);
+        void this.finalizeRun(session.id, run);
+      }
+    } catch (error) {
+      this.updateSession(session, {
+        status: "error",
+        lastError: `Could not reattach: ${describeError(error)}`,
+        activeRunId: undefined,
+      });
+    }
+  }
+
+  // -- chat naming --------------------------------------------------------------
+
+  /** Generate a short title from the first message, Codex-style. */
+  private generateName(session: Session, firstMessage: string): void {
+    this.updateSession(session, { nameIsAuto: false });
+    void (async () => {
+      try {
+        const sdk = await this.loadSdk();
+        const namingDir = join(this.userDataDir, "naming-workspace");
+        mkdirSync(namingDir, { recursive: true });
+        const result = await sdk.Agent.prompt(
+          "Generate a concise 3-6 word title for the coding task below. " +
+            "Reply with ONLY the title text. No quotes, no trailing punctuation, no tools.\n\n" +
+            `Task: ${firstMessage.slice(0, NAME_PROMPT_LIMIT)}`,
+          {
+            apiKey: this.requireApiKey(),
+            model: { id: session.model.id },
+            local: { cwd: namingDir },
+          },
+        );
+        const title = (result.result ?? "")
+          .trim()
+          .split("\n")[0]
+          .replace(/^["'`#*\s]+|["'`*.\s]+$/g, "")
+          .slice(0, 64);
+        const current = this.store.getSession(session.id);
+        if (title && current) this.updateSession(current, { name: title });
+      } catch {
+        // keep the placeholder name
+      }
+    })();
+  }
+
+  // -- run consumption -------------------------------------------------------------
 
   /** Drains the run's event stream, mirroring it into the transcript. */
   private async consumeRun(sessionId: string, run: Run): Promise<void> {
@@ -231,6 +436,11 @@ export class AgentManager {
       return;
     }
 
+    await this.finalizeRun(sessionId, run);
+  }
+
+  private async finalizeRun(sessionId: string, run: Run): Promise<void> {
+    const session = () => this.store.getSession(sessionId);
     try {
       const result = await run.wait();
       const current = session();
@@ -251,7 +461,7 @@ export class AgentManager {
           prUrl: gitBranch?.prUrl,
           ts: Date.now(),
         });
-        this.updateSession(current, { status: "idle" });
+        this.updateSession(current, { status: "idle", activeRunId: undefined });
       } else if (result.status === "cancelled") {
         this.pushItem(current, {
           id: randomUUID(),
@@ -259,18 +469,26 @@ export class AgentManager {
           text: "Run cancelled",
           ts: Date.now(),
         });
-        this.updateSession(current, { status: "idle" });
+        this.updateSession(current, { status: "idle", activeRunId: undefined });
       } else {
         const message = result.result || "Run failed";
         this.pushItem(current, { id: randomUUID(), kind: "error", text: message, ts: Date.now() });
-        this.updateSession(current, { status: "error", lastError: message });
+        this.updateSession(current, {
+          status: "error",
+          lastError: message,
+          activeRunId: undefined,
+        });
       }
     } catch (error) {
       const current = session();
       if (current) {
         const message = describeError(error);
         this.pushItem(current, { id: randomUUID(), kind: "error", text: message, ts: Date.now() });
-        this.updateSession(current, { status: "error", lastError: message });
+        this.updateSession(current, {
+          status: "error",
+          lastError: message,
+          activeRunId: undefined,
+        });
       }
     } finally {
       const entry = this.live.get(sessionId);

@@ -1,5 +1,6 @@
-import { useEffect, useRef } from "react";
-import type { Session, TranscriptItem } from "@shared/types";
+import { useEffect, useRef, useState } from "react";
+import type { Session, SkillInfo, TranscriptItem } from "@shared/types";
+import { glass } from "../api";
 import { Icon } from "./Icon";
 import { TranscriptItemView } from "./Transcript";
 
@@ -7,6 +8,36 @@ function workspaceLabel(session: Session): string | null {
   if (session.runtime === "local") return session.cwd ?? null;
   if (session.repoUrl) return session.repoUrl.replace(/^https?:\/\/(www\.)?github\.com\//, "");
   return "cloud workspace";
+}
+
+function SkillsHint({ session }: { session: Session }) {
+  const [skills, setSkills] = useState<SkillInfo[]>([]);
+
+  useEffect(() => {
+    let cancelled = false;
+    glass
+      .listSkills(session.runtime === "local" ? session.cwd : undefined)
+      .then((found) => !cancelled && setSkills(found))
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [session.id, session.cwd, session.runtime]);
+
+  if (skills.length === 0) return null;
+  return (
+    <div className="skills-hint">
+      <span className="skills-hint-label">
+        <Icon name="spark" size={11} /> Skills
+      </span>
+      {skills.slice(0, 6).map((skill) => (
+        <span key={skill.name} className="chip chip-skill" title={skill.description}>
+          {skill.name}
+        </span>
+      ))}
+      {skills.length > 6 && <span className="chip">+{skills.length - 6}</span>}
+    </div>
+  );
 }
 
 export function Conversation({ session, items }: { session: Session; items: TranscriptItem[] }) {
@@ -46,6 +77,7 @@ export function Conversation({ session, items }: { session: Session; items: Tran
                 : "This agent works directly against your local files."}
               {workspaceLabel(session) && <code> {workspaceLabel(session)}</code>}
             </p>
+            <SkillsHint session={session} />
             <p className="conversation-empty-hint">Send a task below to put it to work.</p>
           </div>
         )}

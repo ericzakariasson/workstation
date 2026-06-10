@@ -1,9 +1,10 @@
 import { join } from "node:path";
 import { writeFileSync } from "node:fs";
-import { BrowserWindow, app, shell } from "electron";
+import { BrowserWindow, app, powerMonitor, shell } from "electron";
 import { IPC } from "@shared/api";
 import type { GlassEvent } from "@shared/types";
 import { AgentManager } from "./agent-manager";
+import { AutomationScheduler } from "./automations";
 import { registerIpc } from "./ipc";
 import { GlassStore } from "./store";
 
@@ -81,10 +82,21 @@ async function runSmokeTest(window: BrowserWindow): Promise<void> {
 void app.whenReady().then(() => {
   const store = new GlassStore(app.getPath("userData"));
   const agents = new AgentManager(store, app.getPath("userData"), broadcast);
-  registerIpc(store, agents);
+  const automations = new AutomationScheduler(store, agents, broadcast);
+  registerIpc(store, agents, automations);
+  automations.start();
 
   mainWindow = createWindow();
   if (isSmokeTest) void runSmokeTest(mainWindow);
+
+  // Cloud runs keep going while the app is closed or the laptop sleeps;
+  // pick their streams back up.
+  if (store.getSettings().apiKey) {
+    agents.reattachRunningSessions("startup");
+  }
+  powerMonitor.on("resume", () => {
+    if (store.getSettings().apiKey) agents.reattachRunningSessions("wake");
+  });
 
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) {
@@ -93,6 +105,7 @@ void app.whenReady().then(() => {
   });
 
   app.on("before-quit", () => {
+    automations.stop();
     store.flush();
     void agents.disposeAll();
   });

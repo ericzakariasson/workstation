@@ -1,4 +1,4 @@
-import type { ModelInfo, Session, TranscriptItem } from "@shared/types";
+import type { Automation, ModelInfo, Session, TranscriptItem } from "@shared/types";
 
 /**
  * Seed data for GLASS_DEMO=1 — lets the full UI render (and be screenshotted
@@ -67,6 +67,27 @@ export const demoSessions: Session[] = [
     lastError: "Usage limit exceeded",
     createdAt: now - 400 * min,
     lastActivityAt: now - 220 * min,
+  },
+];
+
+export const demoAutomations: Automation[] = [
+  {
+    id: "auto-1",
+    name: "Morning CI triage",
+    sessionId: "demo-1",
+    prompt: "Check CI for failures on main and investigate any new ones.",
+    schedule: { kind: "daily", hour: 9, minute: 0 },
+    enabled: true,
+    lastRunAt: now - 290 * min,
+    nextRunAt: now + 600 * min,
+  },
+  {
+    id: "auto-2",
+    name: "Dependency audit",
+    sessionId: "demo-2",
+    prompt: "Run npm audit and summarize anything actionable.",
+    schedule: { kind: "interval", minutes: 240 },
+    enabled: false,
   },
 ];
 

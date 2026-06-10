@@ -1,5 +1,6 @@
 import { useEffect } from "react";
 import type { Session } from "@shared/types";
+import { AutomationsModal } from "./components/AutomationsModal";
 import { Composer } from "./components/Composer";
 import { Conversation } from "./components/Conversation";
 import { Icon } from "./components/Icon";
@@ -91,6 +92,7 @@ export default function App() {
   const settings = useGlass((state) => state.settings);
   const showNewAgent = useGlass((state) => state.showNewAgent);
   const showSettings = useGlass((state) => state.showSettings);
+  const showAutomations = useGlass((state) => state.showAutomations);
   const toast = useGlass((state) => state.toast);
   const init = useGlass((state) => state.init);
 
@@ -126,6 +128,7 @@ export default function App() {
       </div>
       {showNewAgent && <NewAgentModal />}
       {showSettings && <SettingsModal />}
+      {showAutomations && <AutomationsModal />}
       {toast && <div className="toast">{toast}</div>}
     </>
   );

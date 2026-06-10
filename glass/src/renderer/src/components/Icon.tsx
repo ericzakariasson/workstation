@@ -25,7 +25,14 @@ export type IconName =
   | "check"
   | "x"
   | "link"
-  | "alert";
+  | "alert"
+  | "mic"
+  | "zap"
+  | "plug"
+  | "code"
+  | "panel"
+  | "play"
+  | "clock";
 
 const PATHS: Record<IconName, React.ReactNode> = {
   spark: (
@@ -128,6 +135,40 @@ const PATHS: Record<IconName, React.ReactNode> = {
       <path d="M12 9v4" />
       <path d="M12 17h.01" />
       <path d="M10.3 3.9L1.8 18a2 2 0 001.7 3h17a2 2 0 001.7-3L13.7 3.9a2 2 0 00-3.4 0z" />
+    </>
+  ),
+  mic: (
+    <>
+      <rect x="9" y="2" width="6" height="12" rx="3" />
+      <path d="M5 10v1a7 7 0 0014 0v-1" />
+      <path d="M12 18v4" />
+    </>
+  ),
+  zap: <path d="M13 2L3 14h7l-1 8 11-13h-8l1-7z" />,
+  plug: (
+    <>
+      <path d="M12 22v-4" />
+      <path d="M7 8v4a5 5 0 0010 0V8" />
+      <path d="M9 2v6M15 2v6" />
+    </>
+  ),
+  code: (
+    <>
+      <path d="M16 18l6-6-6-6" />
+      <path d="M8 6l-6 6 6 6" />
+    </>
+  ),
+  panel: (
+    <>
+      <rect x="3" y="4" width="18" height="16" rx="2" />
+      <path d="M9 4v16" />
+    </>
+  ),
+  play: <path d="M6 4l14 8-14 8V4z" />,
+  clock: (
+    <>
+      <circle cx="12" cy="12" r="9" />
+      <path d="M12 7v5l3 3" />
     </>
   ),
 };

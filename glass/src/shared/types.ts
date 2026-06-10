@@ -47,6 +47,8 @@ export interface Session {
   /** Cursor SDK agent id (`agent-` local, `bc-` cloud). Set once created. */
   agentId?: string;
   name: string;
+  /** True until a title is auto-generated from the first message. */
+  nameIsAuto?: boolean;
   runtime: Runtime;
   model: ModelChoice;
   mode: ConversationMode;
@@ -55,6 +57,8 @@ export interface Session {
   startingRef?: string;
   autoCreatePR?: boolean;
   status: SessionStatus;
+  /** SDK run id of the in-flight run, used to reattach after sleep/restart. */
+  activeRunId?: string;
   lastError?: string;
   branch?: string;
   prUrl?: string;
@@ -94,11 +98,80 @@ export type TranscriptItem =
 export type GlassEvent =
   | { type: "transcript"; sessionId: string; item: TranscriptItem }
   | { type: "session"; session: Session }
-  | { type: "session-removed"; sessionId: string };
+  | { type: "session-removed"; sessionId: string }
+  | { type: "automations"; automations: Automation[] };
+
+// -- MCP -----------------------------------------------------------------
+
+export interface McpServerEntry {
+  id: string;
+  name: string;
+  enabled: boolean;
+  transport: "stdio" | "http";
+  /** stdio */
+  command?: string;
+  args?: string[];
+  env?: Record<string, string>;
+  /** http */
+  url?: string;
+  headers?: Record<string, string>;
+}
+
+// -- LSP -----------------------------------------------------------------
+
+export interface LspServerEntry {
+  id: string;
+  name: string;
+  command: string;
+  args?: string[];
+  /** File extensions this server handles, e.g. ["ts", "tsx"]. */
+  extensions: string[];
+}
+
+// -- Voice ----------------------------------------------------------------
+
+export interface VoiceSettings {
+  /** API key for an OpenAI-compatible transcription endpoint. */
+  apiKey?: string;
+  /** Base URL, defaults to https://api.openai.com/v1 */
+  baseUrl?: string;
+  /** Model id, defaults to gpt-4o-mini-transcribe */
+  model?: string;
+}
+
+// -- Automations ------------------------------------------------------------
+
+export type AutomationSchedule =
+  | { kind: "interval"; minutes: number }
+  | { kind: "daily"; hour: number; minute: number };
+
+export interface Automation {
+  id: string;
+  name: string;
+  sessionId: string;
+  prompt: string;
+  schedule: AutomationSchedule;
+  enabled: boolean;
+  lastRunAt?: number;
+  nextRunAt?: number;
+}
+
+// -- Skills ------------------------------------------------------------------
+
+export interface SkillInfo {
+  name: string;
+  description?: string;
+  source: "project" | "user";
+}
+
+// -- Settings -----------------------------------------------------------------
 
 export interface Settings {
   apiKey?: string;
   defaultModelId?: string;
+  mcpServers?: McpServerEntry[];
+  lspServers?: LspServerEntry[];
+  voice?: VoiceSettings;
 }
 
 export interface AccountInfo {

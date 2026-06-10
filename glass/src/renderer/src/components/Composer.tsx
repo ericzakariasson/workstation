@@ -1,13 +1,21 @@
 import { useEffect, useRef, useState } from "react";
 import type { Session } from "@shared/types";
+import { glass } from "../api";
 import { useGlass } from "../store";
 import { Icon } from "./Icon";
+
+type VoiceState = "idle" | "recording" | "transcribing";
 
 export function Composer({ session }: { session: Session }) {
   const send = useGlass((state) => state.send);
   const cancelActiveRun = useGlass((state) => state.cancelActiveRun);
+  const settings = useGlass((state) => state.settings);
+  const showToast = useGlass((state) => state.showToast);
+  const setShowSettings = useGlass((state) => state.setShowSettings);
   const [text, setText] = useState("");
+  const [voiceState, setVoiceState] = useState<VoiceState>("idle");
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const recorderRef = useRef<MediaRecorder | null>(null);
   const isBusy = session.status === "running" || session.status === "creating";
 
   useEffect(() => {
@@ -21,6 +29,12 @@ export function Composer({ session }: { session: Session }) {
     el.style.height = `${Math.min(el.scrollHeight, 180)}px`;
   }, [text]);
 
+  useEffect(() => {
+    return () => {
+      recorderRef.current?.stream.getTracks().forEach((track) => track.stop());
+    };
+  }, []);
+
   const submit = () => {
     const trimmed = text.trim();
     if (!trimmed || isBusy) return;
@@ -28,14 +42,67 @@ export function Composer({ session }: { session: Session }) {
     void send(trimmed);
   };
 
+  const startRecording = async () => {
+    if (!settings.voice?.apiKey && !glass.demo) {
+      showToast("Configure voice transcription in Settings → Voice first");
+      setShowSettings(true);
+      return;
+    }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const mimeType = MediaRecorder.isTypeSupported("audio/webm") ? "audio/webm" : "";
+      const recorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
+      const chunks: Blob[] = [];
+      recorder.ondataavailable = (event) => {
+        if (event.data.size > 0) chunks.push(event.data);
+      };
+      recorder.onstop = async () => {
+        stream.getTracks().forEach((track) => track.stop());
+        recorderRef.current = null;
+        const blob = new Blob(chunks, { type: recorder.mimeType || "audio/webm" });
+        if (blob.size < 1000) {
+          setVoiceState("idle");
+          return;
+        }
+        setVoiceState("transcribing");
+        try {
+          const transcript = await glass.transcribe(await blob.arrayBuffer(), blob.type);
+          if (transcript) {
+            setText((current) => (current ? `${current.trimEnd()} ${transcript}` : transcript));
+            textareaRef.current?.focus();
+          }
+        } catch (error) {
+          showToast(error instanceof Error ? error.message : String(error));
+        }
+        setVoiceState("idle");
+      };
+      recorderRef.current = recorder;
+      recorder.start();
+      setVoiceState("recording");
+    } catch {
+      showToast("Microphone unavailable or permission denied");
+      setVoiceState("idle");
+    }
+  };
+
+  const stopRecording = () => {
+    recorderRef.current?.stop();
+  };
+
   return (
     <div className="composer">
-      <div className="composer-box">
+      <div className={`composer-box${voiceState === "recording" ? " composer-recording" : ""}`}>
         <textarea
           ref={textareaRef}
           rows={1}
           value={text}
-          placeholder={isBusy ? "Agent is working…" : `Message ${session.name}…`}
+          placeholder={
+            voiceState === "recording"
+              ? "Listening… click the mic to stop"
+              : isBusy
+                ? "Agent is working…"
+                : `Message ${session.name}…`
+          }
           onChange={(event) => setText(event.target.value)}
           onKeyDown={(event) => {
             if (event.key === "Enter" && !event.shiftKey) {
@@ -46,6 +113,21 @@ export function Composer({ session }: { session: Session }) {
         />
         <div className="composer-actions">
           <span className="composer-model">{session.model.id}</span>
+          <button
+            type="button"
+            className={`btn-icon btn-mic${voiceState === "recording" ? " btn-mic-recording" : ""}`}
+            title={
+              voiceState === "recording"
+                ? "Stop recording"
+                : voiceState === "transcribing"
+                  ? "Transcribing…"
+                  : "Dictate (voice to text)"
+            }
+            disabled={voiceState === "transcribing"}
+            onClick={() => (voiceState === "recording" ? stopRecording() : void startRecording())}
+          >
+            {voiceState === "transcribing" ? <span className="spinner" /> : <Icon name="mic" size={14} />}
+          </button>
           {isBusy ? (
             <button
               type="button"

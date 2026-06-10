@@ -1,10 +1,10 @@
 import { mkdirSync, readFileSync, writeFileSync, rmSync, existsSync } from "node:fs";
 import { join } from "node:path";
-import type { Session, Settings, TranscriptItem } from "@shared/types";
+import type { Automation, Session, Settings, TranscriptItem } from "@shared/types";
 
 /**
- * Flat-file persistence for Glass: settings, the session index, and one
- * transcript file per session. Writes are debounced per file.
+ * Flat-file persistence for Glass: settings, the session index, automations,
+ * and one transcript file per session. Writes are debounced per file.
  */
 export class GlassStore {
   private readonly dir: string;
@@ -12,6 +12,7 @@ export class GlassStore {
 
   private settings: Settings = {};
   private sessions = new Map<string, Session>();
+  private automations: Automation[] = [];
   private transcripts = new Map<string, TranscriptItem[]>();
   private pendingWrites = new Map<string, NodeJS.Timeout>();
 
@@ -20,11 +21,15 @@ export class GlassStore {
     this.transcriptsDir = join(this.dir, "transcripts");
     mkdirSync(this.transcriptsDir, { recursive: true });
     this.settings = this.readJson<Settings>(this.settingsPath()) ?? {};
+    this.automations = this.readJson<Automation[]>(this.automationsPath()) ?? [];
     const sessions = this.readJson<Session[]>(this.sessionsPath()) ?? [];
     for (const session of sessions) {
-      // A run can't survive an app restart; normalize stale statuses.
+      // Local runs can't survive an app restart. Cloud runs keep going in the
+      // VM, so leave them "running" and let AgentManager reattach on startup.
       if (session.status === "running" || session.status === "creating") {
-        session.status = "idle";
+        const reattachable =
+          session.runtime === "cloud" && session.agentId && session.activeRunId;
+        if (!reattachable) session.status = "idle";
       }
       this.sessions.set(session.id, session);
     }
@@ -68,6 +73,24 @@ export class GlassStore {
     }
   }
 
+  // -- automations -------------------------------------------------------------
+
+  listAutomations(): Automation[] {
+    return [...this.automations];
+  }
+
+  saveAutomation(automation: Automation): void {
+    const index = this.automations.findIndex((item) => item.id === automation.id);
+    if (index === -1) this.automations.push(automation);
+    else this.automations[index] = automation;
+    this.scheduleWrite(this.automationsPath(), () => this.automations);
+  }
+
+  removeAutomation(id: string): void {
+    this.automations = this.automations.filter((item) => item.id !== id);
+    this.scheduleWrite(this.automationsPath(), () => this.automations);
+  }
+
   // -- transcripts ------------------------------------------------------------
 
   getTranscript(sessionId: string): TranscriptItem[] {
@@ -101,6 +124,7 @@ export class GlassStore {
     this.pendingWrites.clear();
     this.writeJson(this.settingsPath(), this.settings);
     this.writeJson(this.sessionsPath(), this.listSessions());
+    this.writeJson(this.automationsPath(), this.automations);
     for (const [sessionId, items] of this.transcripts) {
       this.writeJson(this.transcriptPath(sessionId), items);
     }
@@ -108,6 +132,10 @@ export class GlassStore {
 
   private settingsPath(): string {
     return join(this.dir, "settings.json");
+  }
+
+  private automationsPath(): string {
+    return join(this.dir, "automations.json");
   }
 
   private sessionsPath(): string {
