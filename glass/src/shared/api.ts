@@ -1,6 +1,7 @@
 import type {
   Automation,
   GlassEvent,
+  ImageAttachment,
   ModelInfo,
   Session,
   SessionConfig,
@@ -15,8 +16,10 @@ export interface GlassApi {
   platform: string;
   /** Demo mode renders seeded data so the UI can be explored without an API key. */
   demo: boolean;
-  /** Headless smoke tests: open a specific view on boot ("settings" | "automations"). */
+  /** Headless smoke tests: open a specific view on boot ("settings" | "automations" | "browser"). */
   smokeView?: string;
+  /** Headless smoke tests: preload the built-in browser with this URL. */
+  smokeUrl?: string;
 
   getSettings(): Promise<Settings>;
   setSettings(patch: Partial<Settings>): Promise<Settings>;
@@ -29,9 +32,12 @@ export interface GlassApi {
   createSession(config: SessionConfig): Promise<Session>;
   removeSession(sessionId: string): Promise<void>;
   renameSession(sessionId: string, name: string): Promise<void>;
-  sendMessage(sessionId: string, text: string): Promise<void>;
+  sendMessage(sessionId: string, text: string, images?: ImageAttachment[]): Promise<void>;
   cancelRun(sessionId: string): Promise<void>;
   removeQueuedMessage(sessionId: string, messageId: string): Promise<void>;
+
+  /** Screenshot a webview (by webContents id) for sending to an agent. */
+  captureBrowser(webContentsId: number): Promise<ImageAttachment>;
 
   listSkills(cwd?: string): Promise<SkillInfo[]>;
 
@@ -67,6 +73,7 @@ export const IPC = {
   automationsRemove: "automations:remove",
   automationsRunNow: "automations:run-now",
   voiceTranscribe: "voice:transcribe",
+  browserCapture: "browser:capture",
   dialogPickDirectory: "dialog:pick-directory",
   shellOpenExternal: "shell:open-external",
   event: "glass:event",

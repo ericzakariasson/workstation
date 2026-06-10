@@ -1,11 +1,18 @@
 import { contextBridge, ipcRenderer } from "electron";
 import { IPC, type GlassApi } from "@shared/api";
-import type { Automation, GlassEvent, SessionConfig, Settings } from "@shared/types";
+import type {
+  Automation,
+  GlassEvent,
+  ImageAttachment,
+  SessionConfig,
+  Settings,
+} from "@shared/types";
 
 const api: GlassApi = {
   platform: process.platform,
   demo: process.env.GLASS_DEMO === "1",
   smokeView: process.env.GLASS_SMOKE_VIEW,
+  smokeUrl: process.env.GLASS_SMOKE_URL,
 
   getSettings: () => ipcRenderer.invoke(IPC.settingsGet),
   setSettings: (patch: Partial<Settings>) => ipcRenderer.invoke(IPC.settingsSet, patch),
@@ -19,11 +26,14 @@ const api: GlassApi = {
   removeSession: (sessionId: string) => ipcRenderer.invoke(IPC.sessionsRemove, sessionId),
   renameSession: (sessionId: string, name: string) =>
     ipcRenderer.invoke(IPC.sessionsRename, sessionId, name),
-  sendMessage: (sessionId: string, text: string) =>
-    ipcRenderer.invoke(IPC.sessionsSend, sessionId, text),
+  sendMessage: (sessionId: string, text: string, images?: ImageAttachment[]) =>
+    ipcRenderer.invoke(IPC.sessionsSend, sessionId, text, images),
   cancelRun: (sessionId: string) => ipcRenderer.invoke(IPC.sessionsCancel, sessionId),
   removeQueuedMessage: (sessionId: string, messageId: string) =>
     ipcRenderer.invoke(IPC.sessionsQueueRemove, sessionId, messageId),
+
+  captureBrowser: (webContentsId: number) =>
+    ipcRenderer.invoke(IPC.browserCapture, webContentsId),
 
   listSkills: (cwd?: string) => ipcRenderer.invoke(IPC.skillsList, cwd),
 

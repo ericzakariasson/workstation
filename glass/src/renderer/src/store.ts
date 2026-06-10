@@ -3,6 +3,7 @@ import type {
   AccountInfo,
   Automation,
   GlassEvent,
+  ImageAttachment,
   ModelInfo,
   Session,
   SessionConfig,
@@ -27,6 +28,10 @@ interface GlassState {
   showNewAgent: boolean;
   showSettings: boolean;
   showAutomations: boolean;
+  browserOpen: boolean;
+  browserUrl: string;
+  browserWidth: number;
+  pendingAttachment: ImageAttachment | null;
   toast: string | null;
 
   init: () => Promise<void>;
@@ -46,6 +51,10 @@ interface GlassState {
   setShowNewAgent: (show: boolean) => void;
   setShowSettings: (show: boolean) => void;
   setShowAutomations: (show: boolean) => void;
+  setBrowserOpen: (open: boolean) => void;
+  setBrowserUrl: (url: string) => void;
+  setBrowserWidth: (width: number) => void;
+  setPendingAttachment: (attachment: ImageAttachment | null) => void;
   showToast: (message: string) => void;
 }
 
@@ -114,6 +123,10 @@ export const useGlass = create<GlassState>((set, get) => {
     showNewAgent: false,
     showSettings: false,
     showAutomations: false,
+    browserOpen: glass.smokeView === "browser",
+    browserUrl: glass.smokeUrl ?? "",
+    browserWidth: 460,
+    pendingAttachment: null,
     toast: null,
 
     init: async () => {
@@ -190,14 +203,16 @@ export const useGlass = create<GlassState>((set, get) => {
     },
 
     send: async (text) => {
-      const { activeSessionId, demo, showToast } = get();
+      const { activeSessionId, demo, showToast, pendingAttachment } = get();
       if (!activeSessionId) return;
       if (demo) {
         showToast("Demo mode: connect an API key to talk to agents");
         return;
       }
+      const images = pendingAttachment ? [pendingAttachment] : undefined;
+      set({ pendingAttachment: null });
       try {
-        await glass.sendMessage(activeSessionId, text);
+        await glass.sendMessage(activeSessionId, text, images);
       } catch (error) {
         showToast(error instanceof Error ? error.message : String(error));
       }
@@ -284,6 +299,10 @@ export const useGlass = create<GlassState>((set, get) => {
     setShowNewAgent: (show) => set({ showNewAgent: show }),
     setShowSettings: (show) => set({ showSettings: show }),
     setShowAutomations: (show) => set({ showAutomations: show }),
+    setBrowserOpen: (open) => set({ browserOpen: open }),
+    setBrowserUrl: (url) => set({ browserUrl: url }),
+    setBrowserWidth: (width) => set({ browserWidth: width }),
+    setPendingAttachment: (attachment) => set({ pendingAttachment: attachment }),
 
     showToast: (message) => {
       if (toastTimer) clearTimeout(toastTimer);

@@ -1032,6 +1032,208 @@ body {
 }
 
 /* ------------------------------------------------------------------ */
+/* Main split + built-in browser                                          */
+/* ------------------------------------------------------------------ */
+
+.main-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
+
+.main-chat {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.splitter {
+  width: 5px;
+  flex-shrink: 0;
+  cursor: col-resize;
+  background: transparent;
+  border-left: 1px solid var(--border-soft);
+  transition: background 0.12s ease;
+}
+.splitter:hover {
+  background: rgba(139, 124, 246, 0.3);
+}
+
+body.resizing {
+  cursor: col-resize;
+  user-select: none;
+}
+body.resizing webview {
+  pointer-events: none;
+}
+
+.browser-host {
+  flex-shrink: 0;
+  min-width: 320px;
+  display: flex;
+}
+
+.browser-panel {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.browser-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border-soft);
+  flex-shrink: 0;
+}
+
+.browser-address {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 0 10px;
+  height: 28px;
+  border-radius: 9px;
+  border: 1px solid var(--border-soft);
+  background: rgba(0, 0, 0, 0.25);
+}
+.browser-address:focus-within {
+  border-color: rgba(139, 124, 246, 0.55);
+}
+.browser-address input {
+  flex: 1;
+  min-width: 0;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 11.5px;
+  padding: 0;
+}
+.browser-address input::placeholder {
+  color: var(--text-faint);
+  font-family: inherit;
+}
+.browser-address .spinner {
+  width: 11px;
+  height: 11px;
+}
+
+.browser-view {
+  flex: 1;
+  min-height: 0;
+  background: #fff;
+}
+
+.browser-start {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  text-align: center;
+  padding: 30px;
+  color: var(--text-dim);
+}
+.browser-start-icon {
+  width: 52px;
+  height: 52px;
+  border-radius: 16px;
+  display: grid;
+  place-items: center;
+  background: var(--panel-strong);
+  border: 1px solid var(--border);
+  color: var(--accent-b);
+  margin-bottom: 4px;
+}
+.browser-start h3 {
+  color: var(--text);
+  font-size: 15px;
+}
+.browser-start p {
+  font-size: 12.5px;
+  max-width: 300px;
+}
+.browser-start-links {
+  display: flex;
+  gap: 8px;
+  margin-top: 4px;
+}
+.browser-start-links .btn {
+  font-family: var(--mono);
+  font-size: 11px;
+}
+.browser-start-hint {
+  font-size: 11px;
+  color: var(--text-faint);
+}
+
+.btn-icon-active {
+  border-color: rgba(139, 124, 246, 0.55);
+  background: rgba(139, 124, 246, 0.16);
+  color: #c4b5fd;
+}
+
+/* Attachments */
+
+.attachment-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+  padding: 5px 8px 5px 5px;
+  border-radius: 9px;
+  border: 1px solid rgba(56, 198, 217, 0.35);
+  background: rgba(56, 198, 217, 0.08);
+  font-size: 11.5px;
+  color: var(--accent-b);
+  max-width: fit-content;
+}
+.attachment-chip img {
+  width: 34px;
+  height: 24px;
+  object-fit: cover;
+  border-radius: 5px;
+  border: 1px solid var(--border-soft);
+}
+.attachment-chip button {
+  display: grid;
+  place-items: center;
+  border: none;
+  background: transparent;
+  color: var(--text-faint);
+  cursor: pointer;
+  padding: 2px;
+  border-radius: 5px;
+}
+.attachment-chip button:hover {
+  color: var(--red);
+}
+
+.msg-attachment {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-right: 8px;
+  padding: 1px 7px;
+  border-radius: 99px;
+  border: 1px solid rgba(56, 198, 217, 0.35);
+  background: rgba(56, 198, 217, 0.1);
+  font-size: 10.5px;
+  font-weight: 600;
+  color: var(--accent-b);
+  vertical-align: 1px;
+}
+
+/* ------------------------------------------------------------------ */
 /* Composer                                                                */
 /* ------------------------------------------------------------------ */
 

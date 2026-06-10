@@ -95,7 +95,14 @@ export function TranscriptItemView({ item }: { item: TranscriptItem }) {
     case "user":
       return (
         <div className="msg msg-user">
-          <div className="msg-user-bubble">{item.text}</div>
+          <div className="msg-user-bubble">
+            {item.attachments ? (
+              <span className="msg-attachment">
+                <Icon name="camera" size={11} /> screenshot
+              </span>
+            ) : null}
+            {item.text}
+          </div>
         </div>
       );
     case "assistant":

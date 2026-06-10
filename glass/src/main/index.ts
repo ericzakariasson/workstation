@@ -1,6 +1,6 @@
 import { join } from "node:path";
 import { writeFileSync } from "node:fs";
-import { BrowserWindow, app, powerMonitor, shell } from "electron";
+import { BrowserWindow, app, powerMonitor, shell, webContents } from "electron";
 import { IPC } from "@shared/api";
 import type { GlassEvent } from "@shared/types";
 import { AgentManager } from "./agent-manager";
@@ -38,6 +38,8 @@ function createWindow(): BrowserWindow {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: false,
+      // Hosts the built-in browser panel.
+      webviewTag: true,
     },
   });
 
@@ -46,6 +48,14 @@ function createWindow(): BrowserWindow {
   window.webContents.setWindowOpenHandler(({ url }) => {
     if (/^https?:\/\//.test(url)) void shell.openExternal(url);
     return { action: "deny" };
+  });
+
+  // Keep popups from built-in browser pages inside the same webview.
+  window.webContents.on("did-attach-webview", (_event, contents) => {
+    contents.setWindowOpenHandler(({ url }) => {
+      if (/^https?:\/\//.test(url)) void contents.loadURL(url);
+      return { action: "deny" };
+    });
   });
 
   if (process.env.ELECTRON_RENDERER_URL) {
@@ -66,12 +76,27 @@ async function runSmokeTest(window: BrowserWindow): Promise<void> {
       resolve();
     }
   });
-  await new Promise((resolve) => setTimeout(resolve, 2500));
+  const delay = Number(process.env.GLASS_SMOKE_DELAY ?? 2500);
+  await new Promise((resolve) => setTimeout(resolve, delay));
   try {
     const image = await window.webContents.capturePage();
     const out = process.env.GLASS_SMOKE_OUT ?? "/tmp/glass-smoke.png";
     writeFileSync(out, image.toPNG());
     console.log(`[glass] smoke screenshot written to ${out}`);
+
+    // If the built-in browser is up, capture its guest contents too — same
+    // path the screenshot-to-agent feature uses.
+    const guest = webContents
+      .getAllWebContents()
+      .find((contents) => contents.getType() === "webview");
+    if (guest) {
+      const guestImage = await guest.capturePage();
+      const guestOut = out.replace(/\.png$/, "-webview.png");
+      writeFileSync(guestOut, guestImage.toPNG());
+      console.log(
+        `[glass] webview url=${guest.getURL()} title="${guest.getTitle()}" capture=${guestOut}`,
+      );
+    }
     app.exit(0);
   } catch (error) {
     console.error("[glass] smoke test failed", error);

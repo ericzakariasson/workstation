@@ -79,8 +79,14 @@ export interface Session {
 
 export type ToolStatus = "running" | "completed" | "error";
 
+/** Base64 image payload, matching the SDK's SDKImage data form. */
+export interface ImageAttachment {
+  data: string;
+  mimeType: string;
+}
+
 export type TranscriptItem =
-  | { id: string; kind: "user"; text: string; ts: number }
+  | { id: string; kind: "user"; text: string; attachments?: number; ts: number }
   | { id: string; kind: "assistant"; text: string; ts: number }
   | { id: string; kind: "thinking"; text: string; durationMs?: number; ts: number }
   | {

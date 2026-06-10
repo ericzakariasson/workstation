@@ -32,7 +32,12 @@ export type IconName =
   | "code"
   | "panel"
   | "play"
-  | "clock";
+  | "clock"
+  | "camera"
+  | "refresh"
+  | "arrow-left"
+  | "arrow-right"
+  | "external";
 
 const PATHS: Record<IconName, React.ReactNode> = {
   spark: (
@@ -169,6 +174,37 @@ const PATHS: Record<IconName, React.ReactNode> = {
     <>
       <circle cx="12" cy="12" r="9" />
       <path d="M12 7v5l3 3" />
+    </>
+  ),
+  camera: (
+    <>
+      <path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z" />
+      <circle cx="12" cy="13" r="4" />
+    </>
+  ),
+  refresh: (
+    <>
+      <path d="M21 2v6h-6" />
+      <path d="M21 13a9 9 0 11-3-7.7L21 8" />
+    </>
+  ),
+  "arrow-left": (
+    <>
+      <path d="M19 12H5" />
+      <path d="M12 19l-7-7 7-7" />
+    </>
+  ),
+  "arrow-right": (
+    <>
+      <path d="M5 12h14" />
+      <path d="M12 5l7 7-7 7" />
+    </>
+  ),
+  external: (
+    <>
+      <path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6" />
+      <path d="M15 3h6v6" />
+      <path d="M10 14L21 3" />
     </>
   ),
 };

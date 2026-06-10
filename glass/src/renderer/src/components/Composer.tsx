@@ -10,6 +10,8 @@ export function Composer({ session }: { session: Session }) {
   const send = useGlass((state) => state.send);
   const cancelActiveRun = useGlass((state) => state.cancelActiveRun);
   const removeQueuedMessage = useGlass((state) => state.removeQueuedMessage);
+  const pendingAttachment = useGlass((state) => state.pendingAttachment);
+  const setPendingAttachment = useGlass((state) => state.setPendingAttachment);
   const settings = useGlass((state) => state.settings);
   const showToast = useGlass((state) => state.showToast);
   const setShowSettings = useGlass((state) => state.setShowSettings);
@@ -40,6 +42,10 @@ export function Composer({ session }: { session: Session }) {
   const submit = () => {
     const trimmed = text.trim();
     if (!trimmed) return;
+    if (isBusy && pendingAttachment) {
+      showToast("Screenshots can't be queued — wait for the current run to finish");
+      return;
+    }
     setText("");
     void send(trimmed);
   };
@@ -116,6 +122,22 @@ export function Composer({ session }: { session: Session }) {
         </div>
       )}
       <div className={`composer-box${voiceState === "recording" ? " composer-recording" : ""}`}>
+        {pendingAttachment && (
+          <div className="attachment-chip">
+            <img
+              src={`data:${pendingAttachment.mimeType};base64,${pendingAttachment.data}`}
+              alt="Screenshot attachment"
+            />
+            <span>Browser screenshot</span>
+            <button
+              type="button"
+              title="Remove attachment"
+              onClick={() => setPendingAttachment(null)}
+            >
+              <Icon name="x" size={11} />
+            </button>
+          </div>
+        )}
         <textarea
           ref={textareaRef}
           rows={1}

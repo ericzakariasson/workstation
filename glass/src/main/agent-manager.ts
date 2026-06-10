@@ -4,6 +4,7 @@ import { join } from "node:path";
 import type { McpServerConfig, Run, SDKAgent, SDKCustomTool, SDKMessage } from "@cursor/sdk";
 import type {
   GlassEvent,
+  ImageAttachment,
   ModelInfo,
   Session,
   SessionConfig,
@@ -22,6 +23,8 @@ export interface SendOptions {
   automationName?: string;
   /** The user message is already in the transcript; don't echo it again. */
   skipUserEcho?: boolean;
+  /** Images sent alongside the text (e.g. built-in browser screenshots). */
+  images?: ImageAttachment[];
 }
 
 /**
@@ -283,6 +286,11 @@ export class AgentManager {
       session.status === "creating" ||
       this.live.get(sessionId)?.run !== undefined;
     if (busy) {
+      // Image payloads are too large to persist on the queue; the renderer
+      // blocks queuing screenshots, this is just a backstop.
+      if (options?.images?.length) {
+        throw new Error("Screenshots can't be queued — wait for the current run to finish.");
+      }
       this.enqueue(session, text);
       return;
     }
@@ -349,13 +357,21 @@ export class AgentManager {
       });
     }
     if (!options?.skipUserEcho) {
-      this.pushItem(session, { id: randomUUID(), kind: "user", text, ts: Date.now() });
+      this.pushItem(session, {
+        id: randomUUID(),
+        kind: "user",
+        text,
+        attachments: options?.images?.length || undefined,
+        ts: Date.now(),
+      });
     }
     this.updateSession(session, { status: "running", lastError: undefined });
 
     let run: Run;
     try {
-      run = await agent.send(text);
+      run = options?.images?.length
+        ? await agent.send({ text, images: options.images })
+        : await agent.send(text);
     } catch (error) {
       const message = describeError(error);
       if (isBusyError(error)) {
