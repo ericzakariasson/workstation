@@ -42,6 +42,15 @@ export interface SessionConfig {
 
 export type SessionStatus = "idle" | "creating" | "running" | "error";
 
+/** A message waiting for the current run to finish. */
+export interface QueuedMessage {
+  id: string;
+  text: string;
+  ts: number;
+  /** Already echoed to the transcript (requeued after a busy collision). */
+  echoed?: boolean;
+}
+
 export interface Session {
   id: string;
   /** Cursor SDK agent id (`agent-` local, `bc-` cloud). Set once created. */
@@ -59,6 +68,8 @@ export interface Session {
   status: SessionStatus;
   /** SDK run id of the in-flight run, used to reattach after sleep/restart. */
   activeRunId?: string;
+  /** Messages queued while a run is in flight, dispatched FIFO. */
+  queue?: QueuedMessage[];
   lastError?: string;
   branch?: string;
   prUrl?: string;

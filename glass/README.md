@@ -10,6 +10,7 @@ Spin up parallel coding agents — **local** against folders on your machine, or
 - **Local + cloud runtimes** — local agents work directly on a folder you pick; cloud agents clone a GitHub repo into a Cursor-hosted VM and can auto-open PRs
 - **Live transcript** — streamed assistant output (markdown), collapsible thinking blocks, tool-call cards with arguments/results, and run lifecycle events
 - **Run control** — cancel an in-flight run, follow up on the same conversation, switch between Agent and Plan modes
+- **Message queuing** — keep typing while the agent works; messages queue up (removable, shown above the composer) and dispatch FIFO as runs finish
 - **Model picker** — model catalog and per-model parameters (e.g. thinking effort) discovered live via `Cursor.models.list()`
 - **MCP servers** — manage stdio/HTTP MCP servers in Settings; they're passed inline to every agent (local + cloud). Local agents also load `.cursor/mcp.json` from the project and your home dir
 - **Skills** — local agents load Cursor skills from `.cursor/skills/` (project + user) via `settingSources`; detected skills are shown on each agent's start screen
@@ -74,6 +75,7 @@ Design notes:
 - **JSONL agent store.** The SDK's default local checkpoint store is `sqlite3`, a native addon that would need an Electron ABI rebuild. Glass configures `JsonlLocalAgentStore` instead (`Cursor.configure`), which is pure JS and keeps local agents resumable with zero native compilation.
 - **One ordered event source.** Each run is consumed via `run.stream()`; `tool_call` events arrive twice (running → completed) and are merged into a single transcript card by `call_id`. Final result metadata (duration, branch, PR URL) is read from `run.wait()`.
 - **Sleep/restart resilience.** Each session persists its `activeRunId`. Cloud sessions still marked running are reattached via `Agent.getRun()` on startup and on `powerMonitor` resume — streaming again if the run is alive, or finalizing the result if it ended while the lid was closed. Inline MCP servers and custom tools are re-passed on every `Agent.resume()` because the SDK does not persist them.
+- **Queue semantics.** Sends while a run is in flight append to the session's persisted queue and dispatch FIFO after each run finalizes (finished or cancelled — not after errors, so failures don't burn through queued requests). A server-side `AgentBusyError` requeues the message at the head and retries when the agent frees up.
 - **LSP as a custom tool.** Rather than a separate UI, language servers plug into the agent loop: `local.customTools.lsp_diagnostics` spawns the configured server per workspace (lazily, reused across calls), opens the file over stdio JSON-RPC, and returns `publishDiagnostics` results to the model.
 - **Removal is non-destructive.** Deleting a session only removes Glass's local records; cloud agents remain visible at cursor.com/agents (SDK-created agents are under Filter → Source → SDK).
 

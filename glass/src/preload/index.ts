@@ -22,6 +22,8 @@ const api: GlassApi = {
   sendMessage: (sessionId: string, text: string) =>
     ipcRenderer.invoke(IPC.sessionsSend, sessionId, text),
   cancelRun: (sessionId: string) => ipcRenderer.invoke(IPC.sessionsCancel, sessionId),
+  removeQueuedMessage: (sessionId: string, messageId: string) =>
+    ipcRenderer.invoke(IPC.sessionsQueueRemove, sessionId, messageId),
 
   listSkills: (cwd?: string) => ipcRenderer.invoke(IPC.skillsList, cwd),
 

@@ -9,6 +9,7 @@ type VoiceState = "idle" | "recording" | "transcribing";
 export function Composer({ session }: { session: Session }) {
   const send = useGlass((state) => state.send);
   const cancelActiveRun = useGlass((state) => state.cancelActiveRun);
+  const removeQueuedMessage = useGlass((state) => state.removeQueuedMessage);
   const settings = useGlass((state) => state.settings);
   const showToast = useGlass((state) => state.showToast);
   const setShowSettings = useGlass((state) => state.setShowSettings);
@@ -35,9 +36,10 @@ export function Composer({ session }: { session: Session }) {
     };
   }, []);
 
+  // Sending while busy queues the message; main dispatches FIFO as runs end.
   const submit = () => {
     const trimmed = text.trim();
-    if (!trimmed || isBusy) return;
+    if (!trimmed) return;
     setText("");
     void send(trimmed);
   };
@@ -89,8 +91,30 @@ export function Composer({ session }: { session: Session }) {
     recorderRef.current?.stop();
   };
 
+  const queue = session.queue ?? [];
+
   return (
     <div className="composer">
+      {queue.length > 0 && (
+        <div className="queue-list">
+          <span className="queue-label">
+            <Icon name="clock" size={11} /> Queued · {queue.length}
+          </span>
+          {queue.map((message) => (
+            <div key={message.id} className="queue-row" title={message.text}>
+              <span className="queue-row-text">{message.text}</span>
+              <button
+                type="button"
+                className="queue-row-remove"
+                title="Remove from queue"
+                onClick={() => void removeQueuedMessage(session.id, message.id)}
+              >
+                <Icon name="x" size={11} />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
       <div className={`composer-box${voiceState === "recording" ? " composer-recording" : ""}`}>
         <textarea
           ref={textareaRef}
@@ -100,7 +124,7 @@ export function Composer({ session }: { session: Session }) {
             voiceState === "recording"
               ? "Listening… click the mic to stop"
               : isBusy
-                ? "Agent is working…"
+                ? "Queue a message — it sends when the agent is free…"
                 : `Message ${session.name}…`
           }
           onChange={(event) => setText(event.target.value)}
@@ -128,7 +152,16 @@ export function Composer({ session }: { session: Session }) {
           >
             {voiceState === "transcribing" ? <span className="spinner" /> : <Icon name="mic" size={14} />}
           </button>
-          {isBusy ? (
+          <button
+            type="button"
+            className={`btn-icon ${isBusy ? "btn-queue" : "btn-send"}`}
+            title={isBusy ? "Queue message (Enter)" : "Send (Enter)"}
+            disabled={!text.trim()}
+            onClick={submit}
+          >
+            <Icon name={isBusy ? "clock" : "send"} size={14} />
+          </button>
+          {isBusy && (
             <button
               type="button"
               className="btn-icon btn-stop"
@@ -137,20 +170,12 @@ export function Composer({ session }: { session: Session }) {
             >
               <Icon name="stop" size={14} />
             </button>
-          ) : (
-            <button
-              type="button"
-              className="btn-icon btn-send"
-              title="Send (Enter)"
-              disabled={!text.trim()}
-              onClick={submit}
-            >
-              <Icon name="send" size={14} />
-            </button>
           )}
         </div>
       </div>
-      <div className="composer-hint">Enter to send · Shift+Enter for a new line</div>
+      <div className="composer-hint">
+        {isBusy ? "Enter to queue" : "Enter to send"} · Shift+Enter for a new line
+      </div>
     </div>
   );
 }

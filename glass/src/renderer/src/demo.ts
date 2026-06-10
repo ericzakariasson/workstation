@@ -37,6 +37,18 @@ export const demoSessions: Session[] = [
     mode: "agent",
     cwd: "~/code/acme-api",
     status: "running",
+    queue: [
+      {
+        id: "q1",
+        text: "When the tests pass, also add a CI step that runs them with --runInBand.",
+        ts: now - 2 * min,
+      },
+      {
+        id: "q2",
+        text: "Then update CONTRIBUTING.md with a note about fake timers.",
+        ts: now - 1 * min,
+      },
+    ],
     createdAt: now - 42 * min,
     lastActivityAt: now - 0.2 * min,
   },

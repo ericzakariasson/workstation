@@ -31,6 +31,7 @@ export interface GlassApi {
   renameSession(sessionId: string, name: string): Promise<void>;
   sendMessage(sessionId: string, text: string): Promise<void>;
   cancelRun(sessionId: string): Promise<void>;
+  removeQueuedMessage(sessionId: string, messageId: string): Promise<void>;
 
   listSkills(cwd?: string): Promise<SkillInfo[]>;
 
@@ -59,6 +60,7 @@ export const IPC = {
   sessionsRename: "sessions:rename",
   sessionsSend: "sessions:send",
   sessionsCancel: "sessions:cancel",
+  sessionsQueueRemove: "sessions:queue-remove",
   skillsList: "skills:list",
   automationsList: "automations:list",
   automationsSave: "automations:save",

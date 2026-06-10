@@ -36,6 +36,7 @@ interface GlassState {
   renameSession: (id: string, name: string) => Promise<void>;
   send: (text: string) => Promise<void>;
   cancelActiveRun: () => Promise<void>;
+  removeQueuedMessage: (sessionId: string, messageId: string) => Promise<void>;
   saveApiKey: (apiKey: string) => Promise<VerifyResult>;
   saveSettings: (patch: Partial<Settings>) => Promise<void>;
   saveAutomation: (automation: Automation) => Promise<void>;
@@ -206,6 +207,17 @@ export const useGlass = create<GlassState>((set, get) => {
       const { activeSessionId, demo } = get();
       if (!activeSessionId || demo) return;
       await glass.cancelRun(activeSessionId);
+    },
+
+    removeQueuedMessage: async (sessionId, messageId) => {
+      set((state) => ({
+        sessions: state.sessions.map((session) =>
+          session.id === sessionId
+            ? { ...session, queue: (session.queue ?? []).filter((m) => m.id !== messageId) }
+            : session,
+        ),
+      }));
+      if (!get().demo) await glass.removeQueuedMessage(sessionId, messageId);
     },
 
     saveApiKey: async (apiKey) => {

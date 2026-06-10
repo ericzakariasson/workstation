@@ -46,6 +46,10 @@ export function registerIpc(
 
   ipcMain.handle(IPC.sessionsCancel, (_event, sessionId: string) => agents.cancelRun(sessionId));
 
+  ipcMain.handle(IPC.sessionsQueueRemove, (_event, sessionId: string, messageId: string) =>
+    agents.removeQueuedMessage(sessionId, messageId),
+  );
+
   ipcMain.handle(IPC.skillsList, (_event, cwd?: string) => listSkills(cwd));
 
   ipcMain.handle(IPC.automationsList, () => store.listAutomations());

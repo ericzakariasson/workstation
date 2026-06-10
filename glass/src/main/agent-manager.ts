@@ -20,6 +20,8 @@ const NAME_PROMPT_LIMIT = 600;
 
 export interface SendOptions {
   automationName?: string;
+  /** The user message is already in the transcript; don't echo it again. */
+  skipUserEcho?: boolean;
 }
 
 /**
@@ -268,10 +270,73 @@ export class AgentManager {
 
   // -- messaging ----------------------------------------------------------------
 
+  /**
+   * Queue-aware send: while a run is in flight, messages line up on the
+   * session and dispatch FIFO as runs finish.
+   */
   async send(sessionId: string, text: string, options?: SendOptions): Promise<void> {
     const session = this.store.getSession(sessionId);
     if (!session) throw new Error("Unknown session");
 
+    const busy =
+      session.status === "running" ||
+      session.status === "creating" ||
+      this.live.get(sessionId)?.run !== undefined;
+    if (busy) {
+      this.enqueue(session, text);
+      return;
+    }
+
+    if (session.queue?.length) {
+      // Idle with leftovers (e.g. after an error): keep write order by
+      // appending, then drain from the head.
+      this.enqueue(session, text);
+      await this.dispatchNext(sessionId);
+      return;
+    }
+
+    await this.dispatch(session, text, options);
+  }
+
+  removeQueuedMessage(sessionId: string, messageId: string): void {
+    const session = this.store.getSession(sessionId);
+    if (!session) return;
+    this.updateSession(session, {
+      queue: (session.queue ?? []).filter((message) => message.id !== messageId),
+    });
+  }
+
+  private enqueue(session: Session, text: string): void {
+    this.updateSession(session, {
+      queue: [...(session.queue ?? []), { id: randomUUID(), text, ts: Date.now() }],
+    });
+  }
+
+  /**
+   * Drain the queue shortly after a run finalizes — deferred so finalizeRun's
+   * cleanup (clearing the live run handle) lands before the next dispatch.
+   */
+  private scheduleQueueDispatch(sessionId: string): void {
+    setTimeout(() => void this.dispatchNext(sessionId), 50);
+  }
+
+  /** Send the next queued message if the session is idle. */
+  private async dispatchNext(sessionId: string): Promise<void> {
+    const session = this.store.getSession(sessionId);
+    if (!session) return;
+    if (session.status === "running" || session.status === "creating") return;
+    if (this.live.get(sessionId)?.run) return;
+    const [next, ...rest] = session.queue ?? [];
+    if (!next) return;
+    this.updateSession(session, { queue: rest });
+    try {
+      await this.dispatch(session, next.text, { skipUserEcho: next.echoed });
+    } catch {
+      // dispatch already recorded the failure on the session
+    }
+  }
+
+  private async dispatch(session: Session, text: string, options?: SendOptions): Promise<void> {
     const agent = await this.ensureAgent(session);
     const isFirstMessage = this.store.getTranscript(session.id).length === 0;
 
@@ -283,7 +348,9 @@ export class AgentManager {
         ts: Date.now(),
       });
     }
-    this.pushItem(session, { id: randomUUID(), kind: "user", text, ts: Date.now() });
+    if (!options?.skipUserEcho) {
+      this.pushItem(session, { id: randomUUID(), kind: "user", text, ts: Date.now() });
+    }
     this.updateSession(session, { status: "running", lastError: undefined });
 
     let run: Run;
@@ -291,6 +358,18 @@ export class AgentManager {
       run = await agent.send(text);
     } catch (error) {
       const message = describeError(error);
+      if (isBusyError(error)) {
+        // A run is still active server-side (e.g. cloud 409). Requeue at the
+        // head so the message goes out as soon as the agent frees up.
+        this.updateSession(session, {
+          status: "running",
+          queue: [
+            { id: randomUUID(), text, ts: Date.now(), echoed: true },
+            ...(session.queue ?? []),
+          ],
+        });
+        return;
+      }
       this.pushItem(session, { id: randomUUID(), kind: "error", text: message, ts: Date.now() });
       this.updateSession(session, { status: "error", lastError: message });
       throw new Error(message);
@@ -462,6 +541,7 @@ export class AgentManager {
           ts: Date.now(),
         });
         this.updateSession(current, { status: "idle", activeRunId: undefined });
+        this.scheduleQueueDispatch(sessionId);
       } else if (result.status === "cancelled") {
         this.pushItem(current, {
           id: randomUUID(),
@@ -470,6 +550,7 @@ export class AgentManager {
           ts: Date.now(),
         });
         this.updateSession(current, { status: "idle", activeRunId: undefined });
+        this.scheduleQueueDispatch(sessionId);
       } else {
         const message = result.result || "Run failed";
         this.pushItem(current, { id: randomUUID(), kind: "error", text: message, ts: Date.now() });
@@ -628,6 +709,16 @@ function stringifyPayload(payload: unknown): string | undefined {
     text = `${text.slice(0, PAYLOAD_LIMIT)}\n… (truncated)`;
   }
   return text;
+}
+
+function isBusyError(error: unknown): boolean {
+  if (!(error instanceof Error)) return false;
+  const code = (error as Error & { code?: string }).code ?? "";
+  return (
+    error.constructor.name === "AgentBusyError" ||
+    /agent_?busy/i.test(code) ||
+    /agent is busy/i.test(error.message)
+  );
 }
 
 function describeError(error: unknown): string {

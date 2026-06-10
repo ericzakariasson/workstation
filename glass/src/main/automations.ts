@@ -88,9 +88,9 @@ export class AutomationScheduler {
       return;
     }
 
-    if (session.status === "running" || session.status === "creating") {
-      if (manual) throw new Error(`"${session.name}" is busy with another run`);
-      // Target busy: retry shortly instead of skipping a whole cycle.
+    // Scheduled fires skip busy targets and retry shortly (queuing every cycle
+    // could pile up). Manual runs fall through: send() queues the prompt.
+    if (!manual && (session.status === "running" || session.status === "creating")) {
       automation.nextRunAt = Date.now() + BUSY_RETRY_MS;
       this.store.saveAutomation(automation);
       this.emit();
