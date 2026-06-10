@@ -1,6 +1,14 @@
 # Workstation
 
-Personal macOS setup and a **single Cursor agent skill** for iMessage / Contacts (`imessage`).
+Personal macOS setup, a **single Cursor agent skill** for iMessage / Contacts (`imessage`), and **Glass**, an Electron agent-orchestration app powered by the Cursor SDK.
+
+## Glass
+
+[glass/](glass/) is a Codex-style desktop cockpit for running Cursor agents (local and cloud) in parallel. See [glass/README.md](glass/README.md).
+
+```bash
+cd glass && npm install && npm run dev
+```
 
 ## Cursor skill
 
@@ -30,6 +38,7 @@ See [.cursor/skills/imessage/SKILL.md](.cursor/skills/imessage/SKILL.md) for all
 
 | Path | Role |
 |------|------|
+| [glass/](glass/) | Electron agent-orchestration app (Cursor SDK) |
 | [.cursor/skills/imessage/](.cursor/skills/imessage/) | **SKILL.md**, `reference.md`, `scripts/*.py` |
 
 No secrets or account data belong in this repository—only scripts and documentation.
